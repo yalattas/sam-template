@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Munjiz infrastructure bot
+
+  These functions mainly to conduct stop/run infrastructure on certain time
+
+Parameters:
+  envTag:
+    Type: String
+    Default: spot
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+
+Resources:
+  JobNameIsHere:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join [ "_", [ app_name, !Ref envTag ] ]
+      PackageType: Image
+      CodeUri: core
+      # Handler and Runtime cannot be present when PackageType is Image
+      # Handler: update_hiring/app.lambda_handler
+      # Runtime: python3.9
+      MemorySize: 128
+      Tracing: Active
+      Timeout: 30
+      Policies:
+        - AWSLambdaExecute # Managed policy
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+                - ssm:GetParametersByPath
+              Resource:
+                - !Join ["_",[!Join ["/", ['arn:aws:ssm:eu-west-*:*:parameter', !Ref envTag]], "*"]]
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref envTag
+      Events:
+        cronJob:
+          Name: Every30Minutes
+          Type: Schedule # More info about CloudWatchEvent Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#cloudwatchevent
+          Properties:
+            Schedule: cron(*/30 * * * ? *)
+            # Schedule: rate(30 minutes)
+            Enabled: True
+
+        linkedApi:
+          Type: Api
+          Properties:
+            Path: /
+            Method: get
+            RestApiId: !Ref apiEndpoint
+
+
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./core/main_application
+      DockerTag: !Ref envTag
+
+  apiEndpoint:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref envTag
+      Cors:
+        AllowMethods: "'GET'"
+        AllowHeaders: "'X-Forwarded-For'"
+        AllowOrigin: "'www.example.com'"
+        MaxAge: "'600'"
+        AllowCredentials: true
+      GatewayResponses:
+        DEFAULT_4xx:
+          ResponseParameters:
+            Headers:
+              Access-Control-Expose-Headers: "''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token''"
+              Access-Control-Allow-Origin: "'*'"
+
+# Outputs:
+#   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+#   # Find out more about other implicit resources you can reference within SAM
+#   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+#   HelloWorldFunction:
+#     Description: "Hello World Lambda Function ARN"
+#     Value: !GetAtt HelloWorldFunction.Arn
+#   HelloWorldFunctionIamRole:
+#     Description: "Implicit IAM Role created for Hello World function"
+#     Value: !GetAtt HelloWorldFunctionRole.Arn
